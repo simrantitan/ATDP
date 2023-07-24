@@ -1,0 +1,237 @@
+---
+title: "HK-HorseRacing"
+author: "Simran Titan"
+date: "7/23/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data Science with R Final Project: Hong Kong horse racing from 2017-20
+
+## Dataset Selection
+
+The dataset 'racing.csv' comes from the Kaggle project:
+
+https://www.kaggle.com/datasets/bogdandoicin/horse-racing-results-2017-2020
+
+### Predictive Model of finishing in the Top 3 using bolded variables:
+
+Date: Date of the race. In Hong Kong there is only one race day, per day (racing two days a week). Bear in mind that the racing season starts in September and ends in July.
+
+**Track**: The track the race was ran on, in Hong Kong that is either Sha Tin or Happy Valley. This is of importance, as horses often like Happy Valley or Sha Tin better than the other. Sha Tin is the main track.
+
+**Race number**: The race number (a race day consists of 8-11 races).
+
+**Distance**: The distance the particular race was ran at, in meters. Some horses are experts at sprint distances (e.g 1200 meters), some at middle distance (e.g 1600 meters), and some at longer distances (e.g 2000 m). Trainers could have specialties, too.
+
+**Surface**: If the race was ran at Turf track (grass), or dirt track (AW - All Weather), which is a sand-based surface. This has predictive power - some horses prefer turf racing; some horses prefer dirt racing. Trainers could have specialties here, too.
+
+Prize money. This is the total amount of prize money in the race. The higher the prize money, the better the race.
+
+**Starting position**: The start gate number/post position, high numbers are drawn "wide" while low numbers are drawn to the inside. This is important, as high start gate numbers will correlate with ground loss (a lot of "paths"), because there is an increased chance of getting a position outside of other horses in the turns. The exception is the distance 1000 meters at Sha Tin, at this distance there are no turns and high numbers are usually not a bad thing.
+
+**Jockey**: Who rode the horse in the race. Some jockeys win a lot more races than others.
+
+**Jockey weight**: The weight of the jockey How much a jockey should (minimum) weigh in a given race is not a coincidence, it's based upon rules. Low weight (e.g 50 kg) represents racing against better horses with some weight advantages, while a high weight (e.g 60 kg) represents facing slower horses, but at a penalty.
+
+**Country**: Where the horse was born.
+
+**Age**: The age of the horse at the time of the race. A horse peaks at about 4 to 5 years old in average. Younger horses could improve more, older horses might get slower with age.
+
+**Trainer Name**: The name of the trainer. A trainer is obviously important. How good they are could be calculated with a winning-% (wins/starts*100), but one could also calculate ROI based upon odds. There could also be hidden patterns based on age, distance, surface, the form of stable mates in the time period, etc.
+
+Race time: The time of the race for the particular horse, in seconds.
+
+Path: Is a measure of how wide each horse has been in the turn(s). A higher number means more ground loss due to wide position in the turns, i.e they have not ran the shortest way possible.
+
+**Final place**: The finishing position in a race. (i.e 1st, 3rd, 4th etc)
+
+FGrating: It's a way to normalize race times, so that it measures the quickness of the race regardless of which track, which distance, or the conditions at the race day. A way to normalize how fast a horse ran.
+
+**Odds**: The odds the horse went off at in the market, i.e the probability of victory. This is important, as obviously lower odds correspond with a better finishing position in general.
+
+**Race Type**: Mostly a distinguishing between "handicap races", where the horses do not carry the same jockey weight, and "non-handicap" - where the horses carry the same jockey weight and the fastest horse most often wins.
+
+HorseId: Just an ID of the horse.
+
+JockeyId: Just an ID of the jockey.
+TrainerID: Just an ID of the trainer.
+
+### Methodology
+
+I am only using the bolded variables above which is information available at the time of the bet to predict the target variable 'Final place', or actually the Top 3 placement ('Final place' <= 3). 
+
+My model won't use the Horse name or HorseId because there are 2297 horses and the model will get too complicated. There are fewer Jockeys (89) and Trainers (86) and I will include those.
+
+The track location, the race number, the distance ran, the surface type, and race type are the same for all horses in the race but some horses, jockeys or trainers might have preferences.  These variables won't directly relate to being in the Top 3 but if combined with the jockey or trainer they would relate to being in the Top 3.
+
+I am ignoring the race time (including FGrating), and Path taken because they are related to the target of being in the Top 3 and not available at the time of the bet.
+
+
+## Data Preprocessing
+
+I used 'summary' and 'head' to discover the columns are separated by semi-colons, and the decimal is a comma (European style).  I also converted strings to factors so 'summary' shows the most common values and I can use categorical variables in my model.
+
+```{r}
+#setwd("/home/simrantitan/")
+races <- read.csv("racing.csv", sep=';', dec = ",", stringsAsFactors=TRUE)
+head(races)
+summary(races)
+length(unique(races$HorseId))
+length(unique(races$Jockey))
+length(unique(races$TrainerName))
+```
+
+## Feature Engineering
+
+Only care if the horse places in the Top 3.  Need the variable top3 to be a factor for ggplot to work in next step.
+
+```{r}
+suppressPackageStartupMessages(library(dplyr))
+
+races <- races %>%
+  mutate(top3 = as.factor((Final.place <= 3)*1))
+```
+
+## Exploratory Data Analysis (EDA)
+
+### Continuous variable ggplots
+
+```{r}
+library(ggplot2)
+
+ggplot(races, aes(Odds, fill = top3)) + geom_density(alpha = 0.2) + xlim(0,100)
+ggplot(races, aes(Starting.position, fill = top3)) + geom_density(alpha = 0.2)
+ggplot(races, aes(Jockey.weight, fill = top3)) + geom_density(alpha = 0.2)
+ggplot(races, aes(Horse.age, fill = top3)) + geom_density(alpha = 0.2)
+```
+
+#### Lower 'Odds' and lower 'Starting Position' correlates to being in the Top 3.
+#### Jockey weight is not clearly related to being in the Top 3.
+#### Most horses running are 4 to 6 years old.  Older horses are not as common and don't end up in the Top 3 as often.
+
+
+### Categorical variable boxplots
+
+FGrating is not going to be used in the model but helps with the boxplots below.
+
+
+```{r}
+ggplot(races, aes(x=FGrating, y=Country, fill=top3)) + geom_boxplot() 
+
+races %>% 
+    arrange(Jockey) %>%
+    slice(1:5000) %>%
+    ggplot(., aes(x=FGrating, y=Jockey, fill=top3)) + geom_boxplot()
+
+```
+
+#### It seems New Zealand and Australia provide a lot of horses and many of the fastest horses (FGrating).
+#### Ireland, Great Britain, and Frankrike also provide a lot of horses to competitions in Hong Kong.
+#### The average horse speed is different for each Jockey.
+
+## Model Selection
+
+Kaggle recommends the LightGBM gradient boosting tree based learning algorithm in Python.  I'm going to use the decision trees in the 'tidymodels' R package. 
+
+Coding template from https://www.datacamp.com/tutorial/decision-trees-R
+
+## Model Preparation
+
+```{r}
+suppressPackageStartupMessages(library(tidymodels))
+library(tidyr)
+
+
+# Drop the variables not available at the time of the bet, date, and IDs
+
+races_bet = select(races, all_of(c("Track", "Race.Number", "Distance", "Surface", "Starting.position", "Jockey", "Jockey.weight", "Country", "Horse.age", "TrainerName", "Odds", "RaceType", "top3")))
+
+# Make outcome a numeric
+
+races_bet$top3 = as.numeric(races_bet$top3)
+
+# Split the races_bet data into training and testing sets
+
+set.seed(123)
+data_split <- initial_split(races_bet, prop = 0.75)
+train_data <- training(data_split)
+test_data <- testing(data_split)
+```
+
+## Model Tuning and Training
+
+Students will fine-tune the selected models by adjusting hyperparameters to
+optimize their performance. They can employ techniques like cross-validation, grid search,
+or random search to find the best combination of hyperparameters.
+
+I tried tweaking hyperparameters 'min_n' and 'tree_depth' but changing those values did not make a difference.
+
+```{r}
+# Create a decision tree model specification
+tree_spec <- decision_tree(min_n = 200, tree_depth = 5) %>%
+ set_engine("rpart") %>%
+ set_mode("regression")
+
+# Fit the model to the training data
+tree_fit <- tree_spec %>%
+ fit(top3 ~ ., data = train_data)
+
+```
+
+
+## Model Deployment and Performance Evaluation
+
+```{r}
+# Make predictions on the testing data
+predictions <- tree_fit %>%
+ predict(test_data) %>%
+ pull(.pred)
+
+# Calculate RMSE, R-squared, etc.
+metrics <- metric_set(rmse, rsq, mape, ccc)
+model_performance <- test_data %>%
+ mutate(predictions = predictions) %>%
+ metrics(truth = top3, estimate = predictions)
+
+print(model_performance)
+```
+
+## Model Interpretation
+
+```{r}
+library(rpart.plot)
+
+# Plot the decision tree
+rpart.plot(tree_fit$fit, type = 4, extra = 101, under = TRUE, cex = 0.8, box.palette = "auto", roundint=FALSE)
+```
+
+#### The decision tree is not deep (e.g. 5 levels) and only uses the 'Odds' variable for branching.
+
+
+## Key Findings
+
+Lower 'Odds' and lower 'Starting Position' correlates to being in the Top 3.
+
+Jockey weight is not clearly related to being in the Top 3.
+
+Most horses running are 4 to 6 years old.  Older horses are not as common and don't end up in the Top 3 as often.
+
+It seems New Zealand and Australia provide a lot of horses and many of the fastest horses (FGrating).
+
+Ireland, Great Britain, and Frankrike also provide a lot of horses to competitions in Hong Kong.
+
+The average horse speed seems different for each Jockey.
+
+The decision tree model R-Squared was 0.17 on a test set.
+
+The decision tree model only used the 'Odds' variable which suggests it is likely one of the most important and predictive variables in the dataset.
+
+## Conclusions
+
+The data looks good in visualizations and can be analyzed more to find hidden interactions.
+
+The model seems too simple and doesn't show variable interactions.  Need to experiment with more models.
